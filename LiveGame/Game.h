@@ -1,38 +1,41 @@
 #pragma once
 
-#include "Field.h"
-#include "ConsoleHandler.h"
-#include "FileRW.h"
-#include "FileFormat.h"
-#include <list>
-#include <sstream>
+#include <windows.h>
+#include "GameTypes.h"
+
 
 class Game
 {
 private:
-	std::vector<std::pair<bool, std::pair<int, int>>> buffer;
-	std::stringstream picture;
-	Rules rules;
-	Field* field;
-	ConsoleHandler* chandler;
-	FileRW* frw;
-	int32_t tick;
-	size_t count_of_ticks;
-	bool game_over;
-	float delay;
-	void update(int32_t tick);
-	inline void draw();
+	enum class States { RUN, PAUSED, EXIT };
+	std::vector<CHAR_INFO> imageBuffer;
+	std::vector<Cell> field;
+	Config conf;
 
-	bool check_to_birth(int32_t neighbors);
-	bool check_to_survive(int32_t neighbors);
+	HANDLE hVisible, hHidden;
+
+	DWORD tick = 0;
+	States state = States::RUN;
+	SHORT w = DEFAULT_WIDHT, h = DEFAULT_HEIGHT;
+	SHORT wBuff = DEFAULT_WIDHT, hBuff = DEFAULT_HEIGHT;
+	INT viewportX = 0;  
+	INT viewportY = 0; 
+
+	void Update();
+	void Draw();
+	BYTE CountNeighbors(INT x, INT y);
+	BOOL CheckToBirth(BYTE);
+	BOOL CheckToSurvive(BYTE);
+	void NormalizeCoord();
+	void LoadImageToBuffer();
+	void WriteToScreenBuffer(HANDLE);
+	void SetStartField();
+
 public:
-	Game();
-	Game(Field& f, ConsoleHandler& c, FileRW& frw, Rules& r);
+	Game(Config&);
 	~Game();
 	// start the game
-	void run();
-	void set_start_field(std::vector<std::pair<int32_t, int32_t>> xy);
-	void calculate_state(int32_t tick);
+	void Run();
 };
 
 

@@ -1,26 +1,41 @@
 #pragma once
 #include <Windows.h>
+#include <cstdint>
+#include <vector>
+
+#define DEFAULT_WIDHT 25
+#define DEFAULT_HEIGHT 25
+#define MIN_WIDTH 5
+#define MIN_HEIGHT 5
+
+#define MAX_FIELD_WIDTH 120
+#define MAX_FIELD_HEIGHT 35
+
 
 struct Cell
 {
-	DWORD x = 0;
-	DWORD y = 0;
-	BOOL isAlive = false;
+	BOOL isAlive = 0;
+};
+
+struct Point
+{
+	INT x;
+	INT y;
 };
 
 struct Rules
 {
-	WCHAR B[9];
-	WCHAR S[9];
+	std::vector<BYTE> B{ 3 };
+	std::vector<BYTE> S{ 2, 3 };
 };
 
-struct FileFormat
+struct Config
 {
+	std::string header = "#Life 1.06";
+	std::string nameOfUniverse = "Unknown";
 	Rules rules;
-	std::string name_of_universe;
-	std::string rules_str;
-	std::string header;
-	std::vector<std::pair<int32_t, int32_t>> coordinates;
-	int32_t width, height;
-	bool offset;
+	DWORD width = DEFAULT_WIDHT;
+	DWORD height = DEFAULT_HEIGHT;
+	std::vector<Point> coordinates;
+	BOOL offset = FALSE;
 };

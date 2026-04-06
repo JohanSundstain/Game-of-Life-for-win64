@@ -2,15 +2,16 @@
 
 #include <vector>
 #include <ostream>
+#include <windows.h>
+
+#include "GameTypes.h"
 
 class Field
 {
 private:
-	static int32_t count;
-	std::vector<std::vector<bool>> field;
-	int32_t width, height;
-	// ws - whitespaces, cl - cell
-	char pholder_ws, pholder_cl;
+
+	WCHAR pholder_ws = L' ';
+	WCHAR pholder_cl = L'⭗'; // ⚪
 	Field(int32_t width, int32_t height);
 public:
 	~Field();

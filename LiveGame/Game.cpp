@@ -1,145 +1,226 @@
 ﻿#include <iostream>
 #include <vector>
-#include <sstream>
-#include <fstream>
 
 #include "Game.h"
-#include "UsersExceptions.h"
-#include "KeyListener.h"
 
 
-Game::Game(Field& f, ConsoleHandler& c, FileRW& frw, Rules& r)
+Game::Game(Config& config) 
 {
-	this->rules = std::move(r);
-	this->frw = &frw;
-	this->field = &f;
-	this->chandler = &c;
-	this->delay = 0.3;
-	this->tick = 1;
-	game_over = false;
+	// Cretating handlers
+	hVisible = GetStdHandle(STD_OUTPUT_HANDLE);
+	hHidden = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0,
+		NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+
+	// read config
+	conf = config;
+
+	// read current buffer size
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	GetConsoleScreenBufferInfo(hVisible, &csbi);
+	wBuff = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+	hBuff = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+	w = MAX_FIELD_WIDTH;
+	h = MAX_FIELD_HEIGHT;
+
+	COORD bufferSize = { MAX_FIELD_WIDTH, MAX_FIELD_HEIGHT };
+	SetConsoleScreenBufferSize(hVisible, bufferSize);
+	SetConsoleScreenBufferSize(hHidden, bufferSize);
+
+	SMALL_RECT windowSize = { 0, 0, wBuff - 1, hBuff - 1 };
+	SetConsoleWindowInfo(hVisible, TRUE, &windowSize);
+	SetConsoleWindowInfo(hHidden, TRUE, &windowSize);
+
+	// disable cursor 
+	CONSOLE_CURSOR_INFO cci;
+	GetConsoleCursorInfo(hVisible, &cci);
+	cci.bVisible = FALSE;
+	SetConsoleCursorInfo(hVisible, &cci);
+	GetConsoleCursorInfo(hHidden, &cci);
+	cci.bVisible = FALSE;
+	SetConsoleCursorInfo(hHidden, &cci);
+	
+	imageBuffer.resize(MAX_FIELD_WIDTH * MAX_FIELD_HEIGHT); // +2 for boarder up, down, left, right
+	field.resize(MAX_FIELD_WIDTH * MAX_FIELD_HEIGHT);
+
+	SetStartField();
+	SetConsoleActiveScreenBuffer(hVisible);
 };
 
-Game::Game() {};
-
-Game::~Game() {};
-
-void Game::run()
+Game::~Game() 
 {
-	this->count_of_ticks = 0;
-	while (!this->game_over)
-	{
-
-		chandler->ask();
-		this->draw();
-
-		if (chandler->state == ConsoleStates::dumping)
-		{
-			std::string filename = (char*)chandler->get_shared_data();
-			std::ofstream fout(filename.c_str());
-			this->frw->set_ofile(fout);
-			this->frw->write_ofile(this->field->get_filled_cells());
-			fout.close();
-			chandler->state = ConsoleStates::working;
-		}
-
-		if (chandler->state == ConsoleStates::exiting)
-			game_over = true;
-
-		if (chandler->state == ConsoleStates::changing_tick)
-		{
-			tick = *(int*)chandler->get_shared_data();
-			chandler->state = ConsoleStates::working;
-		}
-
-		if (chandler->state == ConsoleStates::changing_delay)
-		{
-			delay = *(float*)chandler->get_shared_data();
-			chandler->state = ConsoleStates::working;
-		}
-
-		this->update(chandler->state == ConsoleStates::paused ? 0 : tick);
-		count_of_ticks += chandler->state == ConsoleStates::paused ? 0 : tick;
-	}
-	cclr();
-#if defined(__unix__) || defined(__gnu_linux__) || defined(__linux__)
-	endwin();
-#endif
+	CloseHandle(hHidden);
 };
 
-inline void Game::draw()
+void Game::Run()
 {
-	cclr();
-	__cons_flush__(">%s\n", chandler->stream);
-	__cons_flush__("%s\t%s\t%d\n",
-		frw->read_file.name_of_universe.c_str(),
-		frw->read_file.rules_str.c_str(),
-		this->count_of_ticks);
-	__cons_flush__("State: %s\n", chandler->what().c_str());
-	if (chandler->state != ConsoleStates::show_help)
-		__cons_flush__("%s\n", field->get_string_view().c_str());
-	slp(delay);
-}
-
-void Game::set_start_field(std::vector<std::pair<int32_t, int32_t>> xy)
-{
-	int32_t w = field->get_width();
-	int32_t h = field->get_height();
-
-	for (auto p : xy)
+	Draw(); // To change screen buffers. Next itaration will show image. So we can see game from start
+	while (state != States::EXIT)
 	{
-		if (p.first >= w || p.second >= h || p.first < 0 || p.second < 0)
+		if (GetAsyncKeyState(VK_LEFT) & 0x8000) viewportX--;
+		if (GetAsyncKeyState(VK_RIGHT) & 0x8000) viewportX++;
+		if (GetAsyncKeyState(VK_UP) & 0x8000) viewportY--;
+		if (GetAsyncKeyState(VK_DOWN) & 0x8000) viewportY++;
+
+		viewportX = max(0, min(viewportX, MAX_FIELD_WIDTH - wBuff));
+		viewportY = max(0, min(viewportY, MAX_FIELD_HEIGHT - hBuff));
+
+		SMALL_RECT windowPos = 
 		{
-			throw IndexError("The index from file goes beyond the bounds of the array");
+			(SHORT)viewportX,
+			(SHORT)viewportY,
+			(SHORT)(viewportX + wBuff - 1),
+			(SHORT)(viewportY + hBuff - 1)
+		};
+		SetConsoleWindowInfo(hVisible, TRUE, &windowPos);
+		SetConsoleWindowInfo(hHidden, TRUE, &windowPos);
+
+		Draw();
+		Update();
+		Sleep(50);
+	}; 
+};
+
+void Game::Update()
+{
+	std::vector<Cell> nextGen = field; 
+	for (INT i = 0; i < h; i++)
+	{
+		for (INT j = 0; j < w; j++)
+		{
+			INT ind = i * w + j;
+			BYTE neighbors = CountNeighbors(j, i);
+			if (field[ind].isAlive) nextGen[ind].isAlive = CheckToSurvive(neighbors);
+			else nextGen[ind].isAlive = CheckToBirth(neighbors);
 		}
-		(*this->field)[p.second][p.first] = true;
 	}
+	field = nextGen;
 }
 
-void Game::calculate_state(int32_t tick)
+void Game::Draw()
 {
-	update(tick);
+	LoadImageToBuffer();          
+	WriteToScreenBuffer(hHidden); 
+
+	SetConsoleActiveScreenBuffer(hHidden);
+
+	std::swap(hVisible, hHidden);
 }
 
-void Game::update(int32_t tick)
+void Game::WriteToScreenBuffer(HANDLE hBuffer)
 {
-	int32_t w = (*field).get_width();
-	int32_t h = (*field).get_height();
+	SHORT x = 0, y = 0;
+	COORD bufferSize = { MAX_FIELD_WIDTH, MAX_FIELD_HEIGHT };
+	COORD bufferCoord = { (SHORT)viewportX, (SHORT)viewportY};
+	SMALL_RECT writeRegion = { x, y, x + wBuff - 1, hBuff - 1 };
+	WriteConsoleOutputW(hBuffer, imageBuffer.data(), bufferSize, bufferCoord, &writeRegion);
+}
 
-	for (int32_t time = 0; time < tick; time++)
+void Game::LoadImageToBuffer()
+{
+
+	for (INT i = viewportY; i < viewportY + hBuff; i++)
 	{
-		for (int32_t y = 0; y < h; y++)
+		for (INT j = viewportX; j < viewportX + wBuff; j++)
 		{
-			for (int32_t x = 0; x < w; x++)
+			INT max_w = MAX_FIELD_WIDTH;
+			INT max_h = MAX_FIELD_HEIGHT;
+
+			INT ind = i * max_w + j;
+
+			imageBuffer[ind].Attributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+
+			if (i == 0 && j == 0)							imageBuffer[ind].Char.UnicodeChar = L'┌';
+			else if (i == 0 && j == (max_w - 1))			imageBuffer[ind].Char.UnicodeChar = L'┐';
+			else if (i == (max_h - 1) && j == 0)			imageBuffer[ind].Char.UnicodeChar = L'└';
+			else if (i == (max_h - 1) && j == (max_w - 1))	imageBuffer[ind].Char.UnicodeChar = L'┘';
+			else if (j == 0 || j == (max_w - 1))			imageBuffer[ind].Char.UnicodeChar = L'│';
+			else if (i == 0 || i == (max_h - 1))			imageBuffer[ind].Char.UnicodeChar = L'─';
+			else
 			{
-				int32_t nei = (*field).count_neighbors(x, y);
-				if ((*field)[y][x])	buffer.push_back({ check_to_survive(nei),{x,y} });
-				else				buffer.push_back({ check_to_birth(nei),{x,y} });
+				INT fieldIndex = (i - 1) * max_w + (j - 1);
+				if (field[fieldIndex].isAlive)
+				{
+					imageBuffer[ind].Char.UnicodeChar = L'೦';
+				}
+				else
+				{
+					imageBuffer[ind].Char.UnicodeChar = L' ';
+				}
 			}
-		}
 
-		for (const auto el : buffer)
-		{
-			(*field)[el.second.second][el.second.first] = el.first;
 		}
-		buffer.clear();
 	}
-
 }
 
-bool Game::check_to_birth(int32_t neighbors)
+void Game::SetStartField()
 {
-	for (int32_t i = 0; i < 9 && rules.B[i] != 255; i++)
+	if (conf.offset)
 	{
-		if (rules.B[i] == neighbors) return true;
+		NormalizeCoord();
+	}
+
+	for (auto& p : conf.coordinates)
+	{
+		INT ind = p.y * w + p.x;
+		field[ind].isAlive = 1;
+	}
+}
+
+void Game::NormalizeCoord()
+{
+	std::pair<INT, INT> center = {MAX_FIELD_WIDTH / 2, MAX_FIELD_HEIGHT / 2 };
+
+	///////////
+	// 0 1 2 x
+	// 1
+	// 2
+	// y
+
+	for (auto& p : conf.coordinates)
+	{
+		
+
+		p.x = center.first + p.x;
+		p.y = center.second - p.y;
+	}
+}
+
+BYTE Game::CountNeighbors(INT x, INT y)
+{
+	BYTE neighbors = 0;
+	for (INT i = -1; i <= 1; i++) {
+		for (INT j = -1; j <= 1; j++) {
+			if (i == 0 && j == 0) continue;
+
+			// Временные координаты
+			INT curX = x + j;
+			INT curY = y + i;
+
+			// Тороидальное поле (зацикливание)
+			if (curX < 0) curX = MAX_FIELD_WIDTH - 1; else if (curX >= MAX_FIELD_WIDTH) curX = 0;
+			if (curY < 0) curY = MAX_FIELD_HEIGHT - 1; else if (curY >= MAX_FIELD_HEIGHT) curY = 0;
+
+			if (field[curY * w + curX].isAlive) neighbors++;
+		}
+	}
+	return neighbors;
+}
+
+BOOL Game::CheckToBirth(BYTE neighbors)
+{
+	for (INT i = 0; i < conf.rules.B.size(); i++)
+	{
+		if (conf.rules.B[i] == neighbors) return true;
 	}
 	return false;
 }
 
-bool Game::check_to_survive(int32_t neighbors)
+BOOL Game::CheckToSurvive(BYTE neighbors)
 {
-	for (int32_t i = 0; i < 9 && rules.S[i] != 255; i++)
+	for (INT i = 0; i < conf.rules.S.size(); i++)
 	{
-		if (rules.S[i] == neighbors) return true;
+		if (conf.rules.S[i] == neighbors) return true;
 	}
 	return false;
 }
+

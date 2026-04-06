@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <windows.h>
 #include <sstream>
 #include "Field.h"
 #include "KeyListener.h"
@@ -10,11 +11,8 @@ enum class ConsoleStates { exiting, working, paused, changing_tick, changing_del
 class ConsoleHandler
 {
 private:
-	// program write result of command
-	void* shared_data;
-	std::stringstream err_msg;
-	static int32_t pos_at_line;
-	static int32_t w8_key;
+	HANDLE hOutput;
+	std::vector<HANDLE> double_buffer;
 
 	void write_to_void(void* dst, void* src, size_t size);
 public:
@@ -25,7 +23,8 @@ public:
 
 	~ConsoleHandler();
 	// check command from user
-	void ask();
+
+	void draw();
 
 	void exec();
 

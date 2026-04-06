@@ -105,6 +105,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,24 +130,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ConsoleHandler.cpp" />
-    <ClCompile Include="Field.cpp" />
-    <ClCompile Include="FileRW.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="Initializer.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="UsersExceptions.cpp" />
-    <ClCompile Include="UsersExceptions.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ConsoleHandler.h" />
-    <ClInclude Include="Field.h" />
-    <ClInclude Include="FileFormat.h" />
-    <ClInclude Include="FileRW.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="GameTypes.h" />
     <ClInclude Include="Initializer.h" />
-    <ClInclude Include="KeyListener.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
